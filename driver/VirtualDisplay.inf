@@ -1,0 +1,72 @@
+[Version]
+Signature="$Windows NT$"
+Class=Display
+ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
+ClassVer=2.0
+Provider=%ProviderString%
+DriverVer=08/05/2026,1.0.0.0
+PnpLockdown=1
+CatalogFile=VirtualDisplay.cat
+
+[Manufacturer]
+%ManufacturerName%=VirtualDisplayIdd, NTamd64.10.0...18362
+
+[VirtualDisplayIdd.NTamd64.10.0...18362]
+%DeviceName%=VIRTUALDISPLAY_DEVICE, Root\VIRTUALDISPLAY
+
+[SourceDisksFiles]
+VirtualDisplayDriver.dll=1
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[VIRTUALDISPLAY_DEVICE.NT]
+CopyFiles=UMDriverCopy
+
+[VIRTUALDISPLAY_DEVICE.NT.HW]
+AddReg=VirtualDisplay_HardwareDeviceSettings
+
+[VirtualDisplay_HardwareDeviceSettings]
+HKR,, "UpperFilters", %REG_MULTI_SZ%, "IndirectKmd"
+HKR, "WUDF", "DriverList", %REG_MULTI_SZ%, "VirtualDisplayDriver"
+HKR, "WUDF", "DeviceGroupId", %REG_SZ%, "VirtualDisplayDriverGroup"
+HKR,, "Security",, "D:P(A;;GA;;;WD)"
+
+[VIRTUALDISPLAY_DEVICE.NT.Services]
+AddService=WUDFRd,0x1fa,WUDFRD_ServiceInstall
+
+[VIRTUALDISPLAY_DEVICE.NT.Wdf]
+UmdfService=VirtualDisplayDriver,VirtualDisplayDriver_Install
+UmdfServiceOrder=VirtualDisplayDriver
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfImpersonationLevel=Identification
+UmdfDumpMode=HeapDump
+
+[VirtualDisplayDriver_Install]
+UmdfLibraryVersion=2.25.0
+ServiceBinary=%13%\VirtualDisplayDriver.dll
+UmdfExtensions=IddCx0102
+
+[DestinationDirs]
+UMDriverCopy=13
+
+[UMDriverCopy]
+VirtualDisplayDriver.dll,,,0x100
+
+[WUDFRD_ServiceInstall]
+DisplayName=%WudfRdDisplayName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\WUDFRd.sys
+StartName=\Driver\WudfRd
+
+[Strings]
+ProviderString=VirtualDisplay Project
+ManufacturerName=VirtualDisplay Project
+DeviceName=VirtualDisplay Virtual Display Adapter
+DiskName=VirtualDisplay Driver Installation
+WudfRdDisplayName=Windows Driver Foundation - User-mode Driver Framework Reflector
+REG_SZ=0x00000000
+REG_MULTI_SZ=0x00010000

@@ -1,0 +1,180 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="VirtualDisplay"
+           Language="1033"
+           Version="1.0.0"
+           Manufacturer="VirtualDisplay Project"
+           UpgradeCode="9F3E5A71-8B2C-4D6E-A1F0-3C7D2E5B9A11"
+           >
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="VirtualDisplay - Virtual Display Driver and Manager"
+             Manufacturer="VirtualDisplay Project"
+             Platform="x64" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of VirtualDisplay is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- 应用图标（MSI 安装包图标） -->
+    <Icon Id="AppIcon" SourceFile="assets\logo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!-- 卸载注册信息 -->
+    <Property Id="ARPNOREMOVE" Value="0" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/lcxxjmsg-cyber/VirtualDisplay" />
+
+    <!-- 目录结构 -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="VirtualDisplay">
+          <Directory Id="DRIVERFOLDER" Name="driver" />
+          <Directory Id="UIFOLDER" Name="ui" />
+        </Directory>
+      </Directory>
+      <!-- 桌面快捷方式 -->
+      <Directory Id="DesktopFolder" Name="Desktop" />
+      <!-- 开始菜单 -->
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="StartMenuDir" Name="VirtualDisplay">
+          <Component Id="StartMenuShortcut" Guid="*">
+            <Shortcut Id="AppShortcut"
+                      Name="VirtualDisplay"
+                      Description="VirtualDisplay Virtual Display Manager"
+                      Target="[INSTALLFOLDER]VirtualDisplay.exe"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Icon="AppIcon" />
+            <Shortcut Id="UninstallShortcut"
+                      Name="Uninstall VirtualDisplay"
+                      Description="Uninstall VirtualDisplay"
+                      Target="[System64Folder]msiexec.exe"
+                      Arguments="/x [ProductCode]" />
+            <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" Directory="StartMenuDir" />
+            <RegistryValue Root="HKCU"
+                           Key="Software\VirtualDisplay"
+                           Name="installed"
+                           Type="integer"
+                           Value="1"
+                           KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- 桌面快捷方式组件（可选） -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="*">
+        <Shortcut Id="DesktopAppShortcut"
+                  Name="VirtualDisplay"
+                  Description="VirtualDisplay Virtual Display Manager"
+                  Target="[INSTALLFOLDER]VirtualDisplay.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon" />
+        <RemoveFolder Id="RemoveDesktopDir" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\VirtualDisplay"
+                       Name="desktop_shortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- 功能与组件 -->
+    <Feature Id="MainFeature" Title="VirtualDisplay" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="DriverFiles" />
+      <ComponentGroupRef Id="UiFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="VirtualDisplayExe" Guid="*">
+        <File Id="VirtualDisplayExeFile"
+              Name="VirtualDisplay.exe"
+              Source="build\bin\VirtualDisplay.exe"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="IddCtrlExe" Guid="*">
+        <File Id="IddCtrlExeFile"
+              Name="iddctrl.exe"
+              Source="build\bin\iddctrl.exe"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- 驱动文件（放入 driver 子目录，安装后由 iddctrl install 注册） -->
+    <ComponentGroup Id="DriverFiles" Directory="DRIVERFOLDER">
+      <Component Id="DriverDll" Guid="*">
+        <File Id="DriverDllFile"
+              Name="VirtualDisplayDriver.dll"
+              Source="build\bin\VirtualDisplayDriver.dll"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DriverInf" Guid="*">
+        <File Id="DriverInfFile"
+              Name="VirtualDisplay.inf"
+              Source="build\bin\VirtualDisplay.inf"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DriverCat" Guid="*">
+        <File Id="DriverCatFile"
+              Name="VirtualDisplay.cat"
+              Source="build\bin\VirtualDisplay.cat"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DriverRootCer" Guid="*">
+        <File Id="DriverRootCerFile"
+              Name="VirtualDisplayTestRoot.cer"
+              Source="build\bin\VirtualDisplayTestRoot.cer"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DriverSigningCer" Guid="*">
+        <File Id="DriverSigningCerFile"
+              Name="VirtualDisplayTestSigning.cer"
+              Source="build\bin\VirtualDisplayTestSigning.cer"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- UI 资源 -->
+    <ComponentGroup Id="UiFiles" Directory="UIFOLDER">
+      <Component Id="UiAppJs" Guid="*">
+        <File Id="UiAppJsFile" Name="app.js" Source="build\bin\ui\app.js" KeyPath="yes" />
+      </Component>
+      <Component Id="UiIndexHtml" Guid="*">
+        <File Id="UiIndexHtmlFile" Name="index.html" Source="build\bin\ui\index.html" KeyPath="yes" />
+      </Component>
+      <Component Id="UiStyleCss" Guid="*">
+        <File Id="UiStyleCssFile" Name="style.css" Source="build\bin\ui\style.css" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- 自定义动作：安装后注册驱动 + 卸载时移除驱动 -->
+    <CustomAction Id="RegisterDriver"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]iddctrl.exe&quot; install --trust-certs --inf &quot;[INSTALLFOLDER]driver\VirtualDisplay.inf&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+    <CustomAction Id="UnregisterDriver"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]iddctrl.exe&quot; uninstall"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="UnregisterDriver" Before="RemoveFiles">REMOVE~="ALL"</Custom>
+      <Custom Action="RegisterDriver" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
+
+    <!-- 基本 UI -->
+    <UI>
+      <UIRef Id="WixUI_Minimal" />
+    </UI>
+  </Product>
+</Wix>
+

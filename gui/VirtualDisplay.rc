@@ -1,0 +1,33 @@
+#include <windows.h>
+#include "resource.h"
+
+// VirtualDisplay GUI application icon.
+IDI_APPICON ICON "VirtualDisplay.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName",      "VirtualDisplay Project"
+      VALUE "FileDescription",  "VirtualDisplay - Virtual Display Manager"
+      VALUE "FileVersion",      "1.0.0.0"
+      VALUE "InternalName",     "VirtualDisplay.exe"
+      VALUE "OriginalFilename", "VirtualDisplay.exe"
+      VALUE "ProductName",      "VirtualDisplay"
+      VALUE "ProductVersion",   "1.0.0.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

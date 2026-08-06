@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VirtualDisplay</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="titlebar">
+    <span class="tb-title">VirtualDisplay</span>
+    <div class="tb-buttons">
+      <button class="tb-btn" id="tb-min" title="最小化">&ndash;</button>
+      <button class="tb-btn tb-close" id="tb-close" title="关闭">&times;</button>
+    </div>
+  </div>
+  <nav id="nav">
+    <div class="brand">VirtualDisplay</div>
+    <div class="nav-items">
+      <button class="nav-item active" data-page="dashboard">仪表盘</button>
+      <button class="nav-item" data-page="monitors">显示器</button>
+      <button class="nav-item" data-page="gpu">显卡</button>
+      <button class="nav-item" data-page="persist">自恢复</button>
+      <button class="nav-item" data-page="diag">诊断</button>
+      <button class="nav-item" data-page="settings">设置</button>
+    </div>
+  </nav>
+  <main id="content">
+    <!-- Dashboard -->
+    <section id="page-dashboard" class="page active">
+      <div class="status-card">
+        <div class="status-info">
+          <div class="status-title">驱动状态</div>
+          <div class="status-sub" id="dash-driver-status">正在检测…</div>
+        </div>
+        <button class="btn primary" id="dash-install-btn">安装驱动</button>
+      </div>
+      <div class="stat-grid">
+        <div class="card"><div class="stat-value" id="dash-mon-count">-</div><div class="stat-label">虚拟显示器</div></div>
+        <div class="card"><div class="stat-value" id="dash-mode">-</div><div class="stat-label">模式</div></div>
+        <div class="card"><div class="stat-value" id="dash-gpu">-</div><div class="stat-label">渲染 GPU</div></div>
+        <div class="card"><div class="stat-value" id="dash-hdr">-</div><div class="stat-label">HDR</div></div>
+      </div>
+      <div class="section-title">快速添加虚拟显示器</div>
+      <div class="quick-row">
+        <button class="btn" data-quick="0">1080@60</button>
+        <button class="btn" data-quick="1">1080@120</button>
+        <button class="btn" data-quick="2">2K@60</button>
+        <button class="btn" data-quick="3">2K@120</button>
+        <button class="btn" data-quick="4">4K@60</button>
+        <button class="btn" data-quick="5">4K@120</button>
+        <button class="btn" id="dash-physical-btn">跟随物理屏</button>
+        <button class="btn" id="dash-custom-btn">+ 自定义…</button>
+      </div>
+    </section>
+
+    <!-- Monitors -->
+    <section id="page-monitors" class="page">
+      <div class="page-head">
+        <span class="section-title inline">虚拟显示器</span>
+        <div class="head-actions">
+          <button class="btn" id="mon-clear-btn">全部移除</button>
+          <button class="btn primary" id="mon-add-btn">+ 添加显示器</button>
+        </div>
+      </div>
+      <div class="hint">添加后显示器会出现在 Windows 显示设置中，也可在本页下方拖拽排版。</div>
+      <div id="mon-list"></div>
+      <div id="mon-empty" class="empty-hint">暂无虚拟显示器，点击右上角「添加显示器」创建。</div>
+      <div class="section-title" style="margin-top:18px">屏幕布局（拖动方块调整位置）</div>
+      <div class="hint">拖动显示器方块到期望位置，松开后自动应用。点击方块上的「主屏」按钮可设为主显示器。</div>
+      <div id="layout-stage-wrap"><div id="layout-stage"></div><div id="layout-meta" class="layout-meta"></div></div>
+    </section>
+
+    <!-- GPU -->
+    <section id="page-gpu" class="page">
+      <div class="section-title">渲染适配器</div>
+      <button class="btn" id="gpu-auto-btn">使用自动选择（高性能优先）</button>
+      <div id="gpu-list"></div>
+      <div class="hint" id="gpu-actual">当前实际分配: -</div>
+      <div class="hint">注：Windows 将 GPU 选择视为偏好，实际分配可能不同。</div>
+    </section>
+
+    <!-- Persist -->
+    <section id="page-persist" class="page">
+      <div class="section-title">配置持久化</div>
+      <div class="row">
+        <button class="btn primary" id="persist-save-btn">保存当前配置</button>
+        <button class="btn" id="persist-restore-btn">立即恢复</button>
+        <button class="btn" id="persist-clear-btn">清除全部显示器</button>
+      </div>
+      <div class="hint" id="persist-path">配置路径: C:\ProgramData\VirtualDisplay\monitors.conf</div>
+      <div class="row toggle-row">
+        <span id="persist-task-state">开机自恢复: 未启用</span>
+        <label class="switch"><input type="checkbox" id="persist-auto"><span class="slider"></span></label>
+      </div>
+    </section>
+
+    <!-- Diagnostics -->
+    <section id="page-diag" class="page">
+      <div class="row">
+        <button class="btn" data-diag="caps">caps</button>
+        <button class="btn" data-diag="displayconfig">displayconfig</button>
+        <button class="btn" data-diag="displays">displays</button>
+        <button class="btn" data-diag="paths">paths</button>
+        <button class="btn" id="diag-log-btn">打开驱动日志</button>
+      </div>
+      <pre id="diag-output" class="diag-output">点击上方按钮查看输出</pre>
+    </section>
+
+    <!-- Settings -->
+    <section id="page-settings" class="page">
+      <div class="section-title">设置</div>
+      <div class="row toggle-row">
+        <span>关闭按钮最小化到托盘</span>
+        <label class="switch"><input type="checkbox" id="set-tray" checked><span class="slider"></span></label>
+      </div>
+      <div class="hint" id="set-version">VirtualDisplay v1.0.0 · IddCx 1.4–1.11 · WebView2</div>
+    </section>
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- Add monitor dialog -->
+<div id="dialog-overlay" class="overlay hidden">
+  <div class="dialog">
+    <div class="dialog-title">添加虚拟显示器 <span class="dlg-hint">（自定义模式由系统显卡能力决定）</span></div>
+    <div class="dialog-row">
+      <input type="number" id="dlg-w" value="1920" min="320" max="16384"> <span class="x">×</span>
+      <input type="number" id="dlg-h" value="1080" min="200" max="16384">
+      <span class="x">@</span>
+      <input type="number" id="dlg-v" value="60" min="24" max="1000"> <span class="x">Hz</span>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" id="dlg-cancel">取消</button>
+      <button class="btn primary" id="dlg-ok">添加</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

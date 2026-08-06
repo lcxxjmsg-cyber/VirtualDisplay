@@ -1,0 +1,31 @@
+# Build output
+build/
+*.obj
+*.res
+*.exp
+*.lib
+*.wixobj
+*.wixpdb
+
+# Installer output
+packaging/*.msi
+
+# WiX toolset (downloaded, not source)
+packaging/wix/
+
+# Driver signing artifacts
+signing/*.pfx
+signing/*.key.pem
+signing/*.cert.pem
+signing/*.csr.pem
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# Logs
+*.log
+
+# Temp
+tmp/
