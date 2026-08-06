@@ -3079,7 +3079,83 @@ static int CmdUninstall() {
   } else {
     std::cout << "Step 2: Removing driver package from the DriverStore...\n";
   }
-  std::wstring command = L"pnputil /delete-driver VirtualDisplay.inf /uninstall /force";
+
+  // Resolve the published (oemXX.inf) name from pnputil before deleting.
+  // /delete-driver with the original INF name is unreliable on modern
+  // Windows (the DriverStore keeps the package under its published name).
+  std::wstring deleteTarget = L"VirtualDisplay.inf";
+  {
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    SECURITY_ATTRIBUTES sa = {};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    HANDLE enumRead = nullptr, enumWrite = nullptr;
+    CreatePipe(&enumRead, &enumWrite, &sa, 0);
+    if (enumRead) {
+      SetHandleInformation(enumRead, HANDLE_FLAG_INHERIT, 0);
+      si.dwFlags = STARTF_USESTDHANDLES;
+      si.hStdOutput = enumWrite;
+      si.hStdError = enumWrite;
+      si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    }
+    std::wstring enumCmd = L"pnputil /enum-drivers";
+    if (CreateProcessW(nullptr, enumCmd.data(),
+                       nullptr, nullptr, enumRead ? TRUE : FALSE,
+                       CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+      if (enumWrite) CloseHandle(enumWrite);
+      std::string enumOut;
+      char buf[2048];
+      DWORD n = 0;
+      while (WaitForSingleObject(pi.hProcess, 50) == WAIT_TIMEOUT) {
+        while (enumRead && PeekNamedPipe(enumRead, nullptr, 0, nullptr, &n, nullptr) && n > 0) {
+          if (!ReadFile(enumRead, buf, sizeof(buf), &n, nullptr) || n == 0) break;
+          enumOut.append(buf, n);
+        }
+      }
+      if (enumRead) {
+        while (ReadFile(enumRead, buf, sizeof(buf), &n, nullptr) && n > 0) {
+          enumOut.append(buf, n);
+        }
+        CloseHandle(enumRead);
+      }
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+
+      // pnputil lists each package with "oemNN.inf" (published name) and the
+      // original name on a separate line. Find the oemNN.inf published name
+      // that belongs to the package whose original name is virtualdisplay.inf.
+      const std::string marker = "virtualdisplay.inf";
+      size_t pos = 0;
+      while ((pos = enumOut.find(marker, pos)) != std::string::npos) {
+        // Search backwards for the most recent "oemNN.inf" occurrence.
+        size_t oemPos = enumOut.rfind("oem", pos);
+        bool found = false;
+        while (oemPos != std::string::npos) {
+          const size_t dot = enumOut.find(".inf", oemPos);
+          if (dot != std::string::npos && dot < pos && dot - oemPos < 12) {
+            deleteTarget = Utf8ToWide(enumOut.substr(oemPos, dot + 4 - oemPos).c_str());
+            found = true;
+            break;
+          }
+          if (oemPos == 0) {
+            break;
+          }
+          oemPos = enumOut.rfind("oem", oemPos - 1);
+        }
+        if (found) {
+          break;
+        }
+        pos += marker.size();
+      }
+    } else {
+      if (enumRead) CloseHandle(enumRead);
+      if (enumWrite) CloseHandle(enumWrite);
+    }
+  }
+
+  std::wstring command = L"pnputil /delete-driver " + deleteTarget + L" /uninstall /force";
   STARTUPINFOW startup = {};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process = {};
