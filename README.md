@@ -6,7 +6,7 @@
 
 ## 功能特性
 
-- **多虚拟显示器**：同时创建最多 4 个虚拟显示器（1080p / 2K / 4K / 5K / 8K 等任意分辨率）
+- **多虚拟显示器**：同时创建最多 8 个虚拟显示器（1080p / 2K / 4K / 5K / 8K 等任意分辨率）
 - **自定义分辨率与刷新率**：不受固定档位限制，由系统显卡能力决定实际可用性（实测 144Hz 可用）
 - **可视化布局拖拽**：类似 Windows 显示设置的布局面板，物理显示器为固定核心，虚拟显示器可拖拽吸附排版
 - **设为主屏**：一键把虚拟显示器设为主屏（新窗口默认在其打开），物理屏变扩展屏；可一键恢复物理主屏
@@ -62,17 +62,70 @@
 安装目录下附带 `iddctrl.exe`：
 
 ```
-iddctrl add <width> <height> [vsync]        添加显示器（vsync 单位 mHz）
-iddctrl remove <index>                      移除显示器
-iddctrl list --json                         列出显示器（真实编号）
-iddctrl primary <index>                     设为主屏
-iddctrl physical-primary                    恢复物理主屏
-iddctrl layout <index:x,y> [...]            设置显示器位置
-iddctrl advancedcolor [status|on|off] [index]  HDR 控制（按显示器）
-iddctrl install --trust-certs               安装驱动
-iddctrl uninstall                           卸载驱动
-iddctrl save-config / restore               保存 / 恢复配置
-iddctrl register-task [off]                 注册 / 移除开机自恢复
+驱动管理：
+  iddctrl install [--inf <path>] [--trust-certs]   安装驱动包并创建设备
+  iddctrl uninstall                                卸载驱动
+
+显示器管理：
+  iddctrl add <width> <height> [vsync]             添加显示器（vsync 单位 mHz，默认 60000）
+  iddctrl update <index> <width> <height> [vsync]  动态修改显示器分辨率/刷新率
+  iddctrl remove <index>                           移除显示器（index 为真实编号）
+  iddctrl clear                                    移除全部显示器
+  iddctrl list [--json]                            列出显示器数量与真实编号
+
+布局与主屏：
+  iddctrl primary <index>                          把指定虚拟显示器设为主屏
+  iddctrl physical-primary                         恢复物理显示器为主屏
+  iddctrl layout <index:x,y> [<index:x,y>...]      设置显示器桌面位置
+
+HDR：
+  iddctrl advancedcolor [status|on|off] [index]    查询/开启/关闭 HDR（可指定显示器）
+
+渲染 GPU：
+  iddctrl render-list                              列出可用 DXGI 显卡
+  iddctrl render-get                               显示当前渲染 GPU 选择
+  iddctrl render-set auto                          GPU 自动选择
+  iddctrl render-set id <vendor> <device> [subsys] [rev] [high low]
+                                                   指定渲染 GPU（十六进制 ID）
+
+配置持久化：
+  iddctrl save-config [file]                       保存当前显示器布局
+  iddctrl restore [file]                           恢复显示器布局
+  iddctrl register-task [off]                      注册/移除开机自恢复任务
+  iddctrl task-status                              查询自恢复任务状态
+
+诊断：
+  iddctrl caps                                     显示 IddCx 运行时能力
+  iddctrl displays                                 列出 GDI 显示设备
+  iddctrl displayconfig                             列出激活的 DisplayConfig 路径
+  iddctrl paths                                     诊断设备接口路径
+  iddctrl dxgicap [display-name]                   抓取一帧 DXGI 画面
+
+全局选项：
+  --json                                           输出机器可读 JSON（供 GUI 集成）
+
+跨会话：
+  iddctrl --session <id> <command> [args...]       在指定会话运行命令（需 SYSTEM）
+  iddctrl run <exe> [args...]                      启动任意程序（配合 --session）
+```
+
+示例：
+
+```bat
+:: 添加一个 2560x1440@144Hz 的显示器
+iddctrl add 2560 1440 144000
+
+:: 把显示器 2 改成 1920x1080@120Hz
+iddctrl update 2 1920 1080 120000
+
+:: 把显示器 1 设为主屏（新窗口默认在其打开）
+iddctrl primary 1
+
+:: 把显示器 1 放到物理屏右侧 (1920,0)
+iddctrl layout 1:1920,0
+
+:: 查询显示器 2 的 HDR 支持
+iddctrl advancedcolor status 2
 ```
 
 ## 从源码构建

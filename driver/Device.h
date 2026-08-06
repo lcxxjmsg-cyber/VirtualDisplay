@@ -21,7 +21,7 @@ typedef size_t *WDF_STRUCT_INFO;
 #include <d3d11.h>
 #include <iddcx.h>
 
-#define MAX_MONITOR_COUNT 4
+#define MAX_MONITOR_COUNT 8
 
 /**
  * @brief Runtime state for one virtual IddCx monitor.
