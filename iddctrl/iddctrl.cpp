@@ -2426,6 +2426,24 @@ static int CmdAdvancedColor(const std::string &action, UINT32 index = 1) {
       return 1;
     }
 
+    if (!enable) {
+      // Windows keeps 10-bit advanced color (WCG) enabled after HDR is turned
+      // off. The console virtual display then presents SDR desktop content
+      // through the 10-bit pipeline, which Sunshine captures with a different
+      // gamma curve and appears darker than the RDS 8-bit path. Explicitly
+      // return the display to plain SDR when "off" is requested.
+      DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE colorState = {};
+      colorState.header.type = DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE;
+      colorState.header.size = sizeof(colorState);
+      colorState.header.adapterId = path.targetInfo.adapterId;
+      colorState.header.id = path.targetInfo.id;
+      colorState.enableAdvancedColor = 0;
+      const LONG wcgResult = DisplayConfigSetDeviceInfo(&colorState.header);
+      if (wcgResult != ERROR_SUCCESS) {
+        std::cerr << "Warning: advanced color (WCG) remained enabled: " << wcgResult << "\n";
+      }
+    }
+
     result = QueryHdrState(path, &hdrEnabled, &hdrSupported);
     if (result != ERROR_SUCCESS) {
       std::cerr << "Advanced color re-query failed: " << result << "\n";
