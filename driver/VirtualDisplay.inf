@@ -4,7 +4,7 @@ Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 ClassVer=2.0
 Provider=%ProviderString%
-DriverVer=08/08/2026,1.0.3.0
+DriverVer=08/09/2026,1.0.4.0
 PnpLockdown=1
 CatalogFile=VirtualDisplay.cat
 
@@ -70,5 +70,6 @@ DiskName=VirtualDisplay Driver Installation
 WudfRdDisplayName=Windows Driver Foundation - User-mode Driver Framework Reflector
 REG_SZ=0x00000000
 REG_MULTI_SZ=0x00010000
+
 
 
