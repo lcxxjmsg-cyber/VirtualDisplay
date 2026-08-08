@@ -54,16 +54,16 @@ static constexpr MonitorModeSpec BUILTIN_MODE_SPECS[] = {
  * @brief EDID describing the VirtualDisplay monitor.
  *
  * Windows derives monitor-level HDR capability from the EDID: an HDR10
- * static-metadata data block (CTA-861 tag 0x03, EOTF = SMPTE ST 2084) is what
- * makes Display Settings and DISPLAYCONFIG report highDynamicRangeSupported.
- * An EDID-less monitor is always treated as SDR-only, so the driver must
- * provide this descriptor for console HDR.
+ * static-metadata data block (CTA-861-G extended tag 0x06, EOTF mask
+ * ST 2084 | HLG) is what makes Display Settings and DISPLAYCONFIG report
+ * highDynamicRangeSupported. An EDID-less monitor is always treated as
+ * SDR-only, so the driver must provide this descriptor for console HDR.
  *
  * Layout: 128-byte base block (DTD 1920x1080@60 and 3840x2160@60, monitor
  * name "VirtualDisp") followed by a 128-byte CTA-861 extension block with a
- * Video Data Block (720p60/1080p60/1080p120/4K60 VICs) and an HDR static
- * metadata block (MaxCLL 1000 nits, MaxFALL 400 nits). Both checksums are
- * valid.
+ * Video Data Block (1080p60 and 4K60 VICs), an HDR static metadata block
+ * (MaxCLL 1000 nits, MaxFALL 400 nits, Min 0.0055 nits) and a BT.2020
+ * colorimetry block. Both checksums are valid.
  */
 static constexpr BYTE VIRTUALDISPLAY_EDID[256] = {
   0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
@@ -82,9 +82,9 @@ static constexpr BYTE VIRTUALDISPLAY_EDID[256] = {
   0x73, 0x70, 0x20, 0x20, 0x00, 0x00, 0x00, 0xFD,
   0x00, 0x32, 0x3C, 0x46, 0x60, 0x1E, 0x00, 0x0A,
   0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x01, 0x7C,
-  0x02, 0x03, 0x02, 0x00, 0x44, 0x10, 0x20, 0x61,
-  0x04, 0xE6, 0x06, 0x03, 0x02, 0x03, 0xE8, 0x01,
-  0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x02, 0x03, 0x00, 0x00, 0x42, 0x10, 0xA0, 0xE7,
+  0x06, 0x0C, 0x01, 0x8A, 0x60, 0x06, 0xE3, 0x05,
+  0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -97,7 +97,7 @@ static constexpr BYTE VIRTUALDISPLAY_EDID[256] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB3,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x57,
 };
 
 /**
@@ -1237,13 +1237,21 @@ static NTSTATUS
 }
 
 /**
- * @brief Create and report a virtual monitor while the caller holds the device lock.
+ * @brief EDID describing the VirtualDisplay monitor.
  *
- * @param ctx Device state whose adapter receives the monitor.
- * @param inputDesc Requested monitor geometry and refresh rate.
- * @param outputDesc Optional output descriptor that receives the assigned monitor index.
- * @return `STATUS_SUCCESS` on success, otherwise an IddCx or state validation error.
+ * Windows derives monitor-level HDR capability from the EDID: an HDR10
+ * static-metadata data block (CTA-861-G extended tag 0x06, EOTF mask
+ * ST 2084 | HLG) is what makes Display Settings and DISPLAYCONFIG report
+ * highDynamicRangeSupported. An EDID-less monitor is always treated as
+ * SDR-only, so the driver must provide this descriptor for console HDR.
+ *
+ * Layout: 128-byte base block (DTD 1920x1080@60 and 3840x2160@60, monitor
+ * name "VirtualDisp") followed by a 128-byte CTA-861 extension block with a
+ * Video Data Block (1080p60 and 4K60 VICs), an HDR static metadata block
+ * (MaxCLL 1000 nits, MaxFALL 400 nits, Min 0.0055 nits) and a BT.2020
+ * colorimetry block. Both checksums are valid.
  */
+
 static NTSTATUS
   CreateMonitorLocked(
     _Inout_ DeviceContext *ctx,
