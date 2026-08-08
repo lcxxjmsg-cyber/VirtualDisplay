@@ -204,6 +204,7 @@ async function refreshMonitors() {
         <select id="res-${i}"></select>
         <select id="freq-${i}"></select>
         <button class="btn" id="primary-${i}">设为主屏</button>
+        <button class="btn" id="open-here-${i}">在此屏打开程序</button>
         <button class="btn primary" id="apply-${i}">应用</button>
         <button class="btn danger" id="remove-${i}">移除</button>
       </div>`;
@@ -232,6 +233,9 @@ async function refreshMonitors() {
       showToast(r.ok ? `显示器 ${i} 已移除` : "移除失败：" + (r.error || "").slice(0, 200), r.ok);
       refreshAll();
     });
+    // "在此屏打开程序": pick an exe and launch it on this virtual display.
+    const openBtn = card.querySelector(`#open-here-${i}`);
+    openBtn.addEventListener("click", () => pickAndRun("run-display", i));
     card.querySelector(`#primary-${i}`).addEventListener("click", async () => {
       if (!confirm("把虚拟显示器设为系统主屏后：\n\n· 新打开的程序窗口将默认显示在虚拟显示器上\n· 物理显示器将变成扩展屏\n· 在物理屏前操作时窗口可能“看不见”\n\n确定要继续吗？")) return;
       const r = await call("primary", [String(i)]);
@@ -643,6 +647,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("dash-custom-btn").addEventListener("click", () =>
     document.getElementById("dialog-overlay").classList.remove("hidden"));
+  // Run a program on the monitor the mouse is currently on.
+  document.getElementById("dash-run-here-btn").addEventListener("click", () =>
+    pickAndRun("run-here", null));
 
   // Monitors page buttons
   document.getElementById("mon-add-btn").addEventListener("click", () =>
@@ -737,6 +744,27 @@ document.addEventListener("DOMContentLoaded", () => {
       call("--drag");
     }
   });
+
+  // 在此屏打开程序（run-display <index>）或 在鼠标所在屏打开（run-here）
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".exe,.bat,.cmd,.lnk";
+  fileInput.style.display = "none";
+  document.body.appendChild(fileInput);
+  let pendingRun = null;
+  fileInput.addEventListener("change", async () => {
+    const path = fileInput.value;
+    fileInput.value = "";
+    if (!path || !pendingRun) return;
+    const args = pendingRun.args.concat([path]);
+    const r = await call(pendingRun.cmd, args);
+    const label = pendingRun.cmd === "run-display" ? `显示器 ${pendingRun.idx}` : "鼠标所在屏";
+    showToast(r.ok ? `已在${label}打开程序` : "打开失败：" + (r.error || "").slice(0, 160), r.ok);
+  });
+  function pickAndRun(cmd, idx) {
+    pendingRun = { cmd, idx, args: idx ? [String(idx)] : [] };
+    fileInput.click();
+  }
 
   // Boot
   refreshDashboard();

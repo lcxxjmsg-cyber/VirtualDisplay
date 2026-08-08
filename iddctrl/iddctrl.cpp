@@ -596,7 +596,9 @@ static void PrintUsage() {
             << "\n"
             << "Cross-session:\n"
             << "  --session <id> <command> [args...]     Run a command in the target session (requires SYSTEM)\n"
-            << "  run <exe> [args...]                    Launch an arbitrary program (use with --session)\n";
+            << "  run <exe> [args...]                    Launch an arbitrary program (use with --session)\n"
+            << "  run-here <exe> [args...]               Launch a program on the monitor under the cursor\n"
+            << "  run-display <index> <exe> [args...]    Launch a program on a specific virtual display\n";
 }
 
 /**
@@ -3493,6 +3495,73 @@ static int CmdTaskStatus() {
   return 0;
 }
 
+/**
+ * @brief Launch a program and move its top-level window onto a target rect.
+ *
+ * Windows opens new windows on the primary monitor by default. After the
+ * process starts we poll for its visible top-level window and reposition it
+ * (centered) inside the target rectangle, so the window appears on the
+ * display the user was working on.
+ *
+ * @param commandLine Full command line to launch.
+ * @param targetPos Top-left of the target monitor.
+ * @param targetW Target monitor width.
+ * @param targetH Target monitor height.
+ * @return Process ID on success, or zero on failure.
+ */
+static DWORD LaunchAndMoveToRect(
+  const std::wstring &commandLine,
+  POINT targetPos,
+  LONG targetW,
+  LONG targetH
+) {
+  STARTUPINFOW startup = {};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {};
+  if (!CreateProcessW(nullptr, const_cast<wchar_t *>(commandLine.c_str()),
+                      nullptr, nullptr, FALSE, CREATE_NEW_CONSOLE,
+                      nullptr, nullptr, &startup, &process)) {
+    std::cerr << "CreateProcessW failed: " << GetLastError() << "\n";
+    return 0;
+  }
+  CloseHandle(process.hThread);
+
+  const DWORD processId = process.dwProcessId;
+  for (int attempt = 0; attempt < 60; attempt++) {
+    Sleep(200);
+    struct MoveCtx { DWORD pid; const POINT *pos; LONG w, h; bool *found; };
+    bool found = false;
+    MoveCtx ctx = { processId, &targetPos, targetW, targetH, &found };
+    EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
+      MoveCtx *c = reinterpret_cast<MoveCtx *>(lp);
+      DWORD pid = 0;
+      GetWindowThreadProcessId(hwnd, &pid);
+      if (pid != c->pid || !IsWindowVisible(hwnd) || IsIconic(hwnd)) {
+        return TRUE;
+      }
+      WINDOWINFO info = {};
+      info.cbSize = sizeof(info);
+      if (!GetWindowInfo(hwnd, &info)) {
+        return TRUE;
+      }
+      const int winW = info.rcWindow.right - info.rcWindow.left;
+      const int winH = info.rcWindow.bottom - info.rcWindow.top;
+      const int x = c->pos->x + (c->w - winW) / 2;
+      const int y = c->pos->y + (c->h - winH) / 2;
+      SetWindowPos(hwnd, nullptr, x, y, 0, 0,
+                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+      *c->found = true;
+      return FALSE;
+    }, reinterpret_cast<LPARAM>(&ctx));
+    if (found) {
+      break;
+    }
+  }
+
+  CloseHandle(process.hProcess);
+  return processId;
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     PrintUsage();
@@ -3569,6 +3638,100 @@ int main(int argc, char *argv[]) {
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     return static_cast<int>(exitCode);
+  }
+
+  // iddctrl run-display <index> <exe> [args...]: launch a program and move its
+  // main window onto the specified virtual display. Windows opens new windows
+  // on the primary by default; this relocates them so they appear directly on
+  // the target monitor (e.g. a virtual display used for streaming).
+  if (cmd == "run-display") {
+    if (argc < 4) {
+      std::cerr << "Usage: iddctrl run-display <index> <exe> [args...]\n";
+      return 1;
+    }
+    const UINT32 displayIndex = static_cast<UINT32>(std::stoul(argv[2]));
+
+    std::vector<std::wstring> vNames;
+    std::vector<POINT> vPositions;
+    std::vector<LONG> vWidths;
+    std::vector<LONG> vHeights;
+    const UINT32 vCount = EnumerateVirtualDisplays(&vNames, &vPositions, &vWidths, &vHeights);
+    if (displayIndex == 0 || displayIndex > vCount) {
+      std::cerr << "Virtual display " << displayIndex << " not found (active: " << vCount << ")\n";
+      return 1;
+    }
+    const POINT targetPos = vPositions[displayIndex - 1];
+    const LONG targetW = vWidths[displayIndex - 1];
+    const LONG targetH = vHeights[displayIndex - 1];
+
+    std::wstring commandLine;
+    for (int i = 3; i < argc; i++) {
+      if (!commandLine.empty()) {
+        commandLine += L" ";
+      }
+      commandLine += Utf8ToWide(argv[i]);
+    }
+
+    const DWORD pid = LaunchAndMoveToRect(commandLine, targetPos, targetW, targetH);
+    if (pid == 0) {
+      return 1;
+    }
+    if (g_JsonOutput) {
+      std::cout << "{\"pid\":" << pid
+                << ",\"display\":" << displayIndex
+                << ",\"x\":" << targetPos.x
+                << ",\"y\":" << targetPos.y << "}\n";
+    } else {
+      std::cout << "Launched pid=" << pid << " on display " << displayIndex << "\n";
+    }
+    return 0;
+  }
+
+  // iddctrl run-here <exe> [args...]: launch a program and place its window on
+  // the display the mouse cursor is currently on. This matches the expected
+  // behavior of "open where I am": a program launched while working on a
+  // secondary/virtual screen appears on that screen instead of the primary.
+  if (cmd == "run-here") {
+    if (argc < 3) {
+      std::cerr << "Usage: iddctrl run-here <exe> [args...]\n";
+      return 1;
+    }
+    POINT cursor = {};
+    GetCursorPos(&cursor);
+    HMONITOR mon = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (!mon || !GetMonitorInfoW(mon, &mi)) {
+      std::cerr << "Failed to resolve monitor under cursor\n";
+      return 1;
+    }
+    const POINT targetPos = { mi.rcMonitor.left, mi.rcMonitor.top };
+    const LONG targetW = mi.rcMonitor.right - mi.rcMonitor.left;
+    const LONG targetH = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+    std::wstring commandLine;
+    for (int i = 2; i < argc; i++) {
+      if (!commandLine.empty()) {
+        commandLine += L" ";
+      }
+      commandLine += Utf8ToWide(argv[i]);
+    }
+
+    const DWORD pid = LaunchAndMoveToRect(commandLine, targetPos, targetW, targetH);
+    if (pid == 0) {
+      return 1;
+    }
+    if (g_JsonOutput) {
+      std::cout << "{\"pid\":" << pid
+                << ",\"x\":" << targetPos.x
+                << ",\"y\":" << targetPos.y
+                << ",\"w\":" << targetW
+                << ",\"h\":" << targetH << "}\n";
+    } else {
+      std::cout << "Launched pid=" << pid << " on the monitor under the cursor "
+                << "(" << targetW << "x" << targetH << " at " << targetPos.x << "," << targetPos.y << ")\n";
+    }
+    return 0;
   }
 
   if (cmd == "install") {
