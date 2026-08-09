@@ -6,10 +6,11 @@
 
 #include <dxgi1_6.h>
 
-#define MAX_ADVERTISED_MODE_COUNT 16
+#define MAX_ADVERTISED_MODE_COUNT 32
 #define SIGNAL_FREQ_DENOMINATOR 1000
 
 static DeviceContext *g_DeviceContext = nullptr;
+static MonitorContext *g_MonitorDescriptionContext = nullptr;  ///< Monitor whose description is being parsed during a serialized arrival.
 static constexpr INT32 DEFAULT_WIDTH = 1920;
 static constexpr INT32 DEFAULT_HEIGHT = 1080;
 static constexpr INT32 DEFAULT_VSYNC = 60000;
@@ -29,11 +30,11 @@ struct MonitorModeSpec {
 };
 
 /**
- * @brief Stable console-session modes kept across dynamic updates.
+ * @brief Stable fallback console-session modes kept across dynamic updates.
  *
- * GDI enumerates modes from the monitor description, so this table must cover
- * every resolution the control tool can switch to. Resolutions here appear in
- * the Display Settings page and are accepted by ChangeDisplaySettingsEx.
+ * GDI enumerates modes from the monitor description. The current client mode
+ * is appended dynamically during each monitor arrival and is therefore not
+ * limited to this fallback set.
  */
 static constexpr MonitorModeSpec BUILTIN_MODE_SPECS[] = {
   {1280, 720, 60000},
@@ -48,6 +49,7 @@ static constexpr MonitorModeSpec BUILTIN_MODE_SPECS[] = {
   {3440, 1440, 100000},
   {3840, 2160, 60000},
   {3840, 2160, 120000},
+
 };
 
 /**
@@ -107,8 +109,6 @@ static constexpr UINT64 UNRESTRICTED_PIPELINE_BANDWIDTH = 0;
 /**
  * @brief NTSTATUS returned when a VidPN path does not accept the requested modality.
  */
-static constexpr NTSTATUS STATUS_VIRTUALDISPLAY_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED = static_cast<NTSTATUS>(0xC01E0306u);
-
 static constexpr wchar_t ENDPOINT_FRIENDLY_NAME[] = L"VirtualDisplay Virtual Monitor";
 static constexpr wchar_t ENDPOINT_MODEL_NAME[] = L"VirtualDisplay Virtual Display Adapter";
 static constexpr wchar_t ENDPOINT_MANUFACTURER_NAME[] = L"VirtualDisplay Project";
@@ -1023,127 +1023,20 @@ static void
   output->CapabilityFlags = CapabilityFlags(capabilities);
 }
 
-/**
- * @brief Notify IddCx that a monitor's target mode list changed.
- *
- * @param monCtx Monitor with the current mode state.
- * @param source Log label describing the caller.
- * @return `STATUS_SUCCESS` on success, otherwise an IddCx error.
- */
 static NTSTATUS
-  UpdateMonitorModesLocked(
-    _In_ MonitorContext *monCtx,
-    _In_z_ const char *source
-  ) {
-  if (!monCtx || !monCtx->IddCxMonitor) {
-    return STATUS_INVALID_DEVICE_STATE;
-  }
-
-  #if IDDCX_VERSION_MINOR >= 0xA
-  if (g_DeviceContext && g_DeviceContext->Capabilities.MonitorUpdateModes2) {
-    MonitorModeSpec modeSpecs[MAX_ADVERTISED_MODE_COUNT] = {};
-    const UINT32 modeCount = BuildAdvertisedModeSpecs(monCtx, modeSpecs, ARRAYSIZE(modeSpecs), nullptr);
-    if (modeCount == 0) {
-      return STATUS_INVALID_PARAMETER;
-    }
-
-    IDDCX_TARGET_MODE2 targetModes2[MAX_ADVERTISED_MODE_COUNT] = {};
-    const bool hdr10 = g_DeviceContext && g_DeviceContext->Capabilities.Hdr10;
-    for (UINT32 i = 0; i < modeCount; i++) {
-      FillTargetMode2(&targetModes2[i], modeSpecs[i].Width, modeSpecs[i].Height, modeSpecs[i].VSync, hdr10);
-    }
-
-    IDARG_IN_UPDATEMODES2 updateModes2 = {};
-    updateModes2.Reason = IDDCX_UPDATE_REASON_CONFIGURATION_CONSTRAINTS;
-    updateModes2.TargetModeCount = modeCount;
-    updateModes2.pTargetModes = targetModes2;
-
-    const NTSTATUS status2 = IddCxMonitorUpdateModes2(monCtx->IddCxMonitor, &updateModes2);
-    VdIddLog(
-      "%s: IddCxMonitorUpdateModes2 status=0x%08X monitor=%p modes=%u width=%d height=%d vsync=%d",
-      source,
-      status2,
-      monCtx->IddCxMonitor,
-      modeCount,
-      monCtx->Width,
-      monCtx->Height,
-      monCtx->VSync
-    );
-    if (NT_SUCCESS(status2)) {
-      return status2;
-    }
-  }
-  #endif
-
-  MonitorModeSpec modeSpecs[MAX_ADVERTISED_MODE_COUNT] = {};
-  const UINT32 modeCount = BuildAdvertisedModeSpecs(monCtx, modeSpecs, ARRAYSIZE(modeSpecs), nullptr);
-  if (modeCount == 0) {
-    return STATUS_INVALID_PARAMETER;
-  }
-
-  IDDCX_TARGET_MODE targetModes[MAX_ADVERTISED_MODE_COUNT] = {};
-  for (UINT32 i = 0; i < modeCount; i++) {
-    FillTargetMode(&targetModes[i], modeSpecs[i].Width, modeSpecs[i].Height, modeSpecs[i].VSync);
-  }
-
-  IDARG_IN_UPDATEMODES updateModes = {};
-  updateModes.Reason = IDDCX_UPDATE_REASON_CONFIGURATION_CONSTRAINTS;
-  updateModes.TargetModeCount = modeCount;
-  updateModes.pTargetModes = targetModes;
-
-  const NTSTATUS status = IddCxMonitorUpdateModes(monCtx->IddCxMonitor, &updateModes);
-  VdIddLog(
-    "%s: IddCxMonitorUpdateModes status=0x%08X monitor=%p modes=%u width=%d height=%d vsync=%d",
-    source,
-    status,
-    monCtx->IddCxMonitor,
-    modeCount,
-    monCtx->Width,
-    monCtx->Height,
-    monCtx->VSync
+  CreateMonitorLocked(
+    _Inout_ DeviceContext *ctx,
+    _In_ const MonitorDesc *inputDesc,
+    _Out_opt_ MonitorDesc *outputDesc
   );
-  return status;
-}
 
 /**
- * @brief Apply the current monitor layout to an IddCx adapter.
+ * @brief Re-arrive an active monitor so Windows rebuilds its GDI mode list.
  *
- * Console root IDDs do not own the remote-session desktop configuration, so
- * display-config updates are best-effort and their failure is tolerated by the
- * mode-update path.
- *
- * @param ctx Device state whose active monitors form the display config.
- * @param source Log label describing the caller.
- * @return `STATUS_SUCCESS` on success, otherwise an IddCx error.
- */
-static NTSTATUS
-  ApplyRemoteDisplayConfigLocked(
-    _In_ DeviceContext *ctx,
-    _In_z_ const char *source
-  ) {
-  UNREFERENCED_PARAMETER(ctx);
-  UNREFERENCED_PARAMETER(source);
-  VdIddLog("%s: display config update unsupported on console adapter", source);
-  return STATUS_NOT_SUPPORTED;
-}
-
-/**
- * @brief Decide whether a display-config update failure can be ignored.
- *
- * @param status Status returned by an IddCx display-config update call.
- * @return True when the monitor mode update should still be kept.
- */
-static bool
-  IsOptionalDisplayConfigFailure(
-    _In_ NTSTATUS status
-  ) {
-  return status == STATUS_NOT_SUPPORTED ||
-         status == STATUS_INVALID_PARAMETER ||
-         status == STATUS_VIRTUALDISPLAY_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
-}
-
-/**
- * @brief Update an active monitor's mode and ask IddCx to reconfigure the path.
+ * IddCxMonitorUpdateModes2 updates an active target mode list but does not
+ * refresh the console session's GDI enumeration. A departure followed by a
+ * new arrival causes the current arbitrary client mode to be parsed as part
+ * of the monitor description, where Windows can select it exactly.
  *
  * @param ctx Device state that owns the monitor.
  * @param inputDesc Requested monitor mode and one-based monitor index.
@@ -1182,73 +1075,66 @@ static NTSTATUS
   const INT32 oldWidth = monCtx->Width;
   const INT32 oldHeight = monCtx->Height;
   const INT32 oldVSync = monCtx->VSync;
+  MonitorDesc previous = {};
+  previous.Width = static_cast<UINT32>(oldWidth);
+  previous.Height = static_cast<UINT32>(oldHeight);
+  previous.VSync = static_cast<UINT32>(oldVSync);
+  previous.MonitorIndex = idx;
 
-  monCtx->Width = static_cast<INT32>(requested.Width);
-  monCtx->Height = static_cast<INT32>(requested.Height);
-  monCtx->VSync = static_cast<INT32>(requested.VSync);
+  VdIddLog(
+    "UpdateMonitorLocked: re-arriving index=%u old=%dx%d@%d new=%ux%u@%u",
+    idx,
+    oldWidth,
+    oldHeight,
+    oldVSync,
+    requested.Width,
+    requested.Height,
+    requested.VSync
+  );
+  StopSwapChainProcessor(monCtx);
+  IddCxMonitorDeparture(monCtx->IddCxMonitor);
+  monCtx->InUse = FALSE;
+  monCtx->IddCxMonitor = nullptr;
+  ctx->MonitorCount--;
 
-  NTSTATUS status = UpdateMonitorModesLocked(monCtx, "UpdateMonitorLocked");
-  if (NT_SUCCESS(status)) {
-    const NTSTATUS displayConfigStatus = ApplyRemoteDisplayConfigLocked(ctx, "UpdateMonitorLocked");
-    if (!NT_SUCCESS(displayConfigStatus)) {
-      if (IsOptionalDisplayConfigFailure(displayConfigStatus)) {
-        VdIddLog(
-          "UpdateMonitorLocked: keeping mode update despite optional display config status=0x%08X",
-          displayConfigStatus
-        );
-      } else {
-        status = displayConfigStatus;
-      }
-    }
-  }
-
+  const NTSTATUS status = CreateMonitorLocked(ctx, &requested, outputDesc);
   if (!NT_SUCCESS(status)) {
     VdIddLog(
-      "UpdateMonitorLocked: rollback index=%u status=0x%08X old=%dx%d@%d new=%ux%u@%u",
+      "UpdateMonitorLocked: re-arrival failed index=%u status=0x%08X; restoring %dx%d@%d",
       idx,
       status,
       oldWidth,
       oldHeight,
-      oldVSync,
-      requested.Width,
-      requested.Height,
-      requested.VSync
+      oldVSync
     );
-    monCtx->Width = oldWidth;
-    monCtx->Height = oldHeight;
-    monCtx->VSync = oldVSync;
-    UpdateMonitorModesLocked(monCtx, "UpdateMonitorLockedRollback");
-    ApplyRemoteDisplayConfigLocked(ctx, "UpdateMonitorLockedRollback");
+    const NTSTATUS restoreStatus = CreateMonitorLocked(ctx, &previous, nullptr);
+    if (!NT_SUCCESS(restoreStatus)) {
+      VdIddLog("UpdateMonitorLocked: restore failed index=%u status=0x%08X", idx, restoreStatus);
+    }
     return status;
   }
 
-  if (outputDesc) {
-    *outputDesc = requested;
-  }
   VdIddLog(
-    "UpdateMonitorLocked: updated index=%u width=%d height=%d vsync=%d",
+    "UpdateMonitorLocked: re-arrived index=%u width=%u height=%u vsync=%u",
     idx,
-    monCtx->Width,
-    monCtx->Height,
-    monCtx->VSync
+    requested.Width,
+    requested.Height,
+    requested.VSync
   );
   return STATUS_SUCCESS;
 }
 
 /**
- * @brief EDID describing the VirtualDisplay monitor.
+ * @brief Create a VirtualDisplay monitor and notify IddCx of its arrival.
  *
- * Windows derives monitor-level HDR capability from the EDID: an HDR10
- * static-metadata data block (CTA-861-G extended tag 0x06, EOTF mask
- * ST 2084 | HLG) is what makes Display Settings and DISPLAYCONFIG report
- * highDynamicRangeSupported. An EDID-less monitor is always treated as
- * SDR-only, so the driver must provide this descriptor for console HDR.
+ * The monitor context is made available while IddCx parses the monitor
+ * description so that the current arbitrary client mode is advertised to
+ * Windows and can become the preferred desktop mode.
  *
- * Layout: 128-byte base block (DTD 1920x1080@60 and 3840x2160@60, monitor
- * name "VirtualDisp") followed by a 128-byte CTA-861 extension block with a
- * Video Data Block (1080p60 and 4K60 VICs), an HDR static metadata block
- * (MaxCLL 1000 nits, MaxFALL 400 nits, Min 0.0055 nits) and a BT.2020
- * colorimetry block. Both checksums are valid.
+ * @param ctx Device state that owns the new monitor.
+ * @param inputDesc Requested monitor geometry.
+ * @param outputDesc Optional descriptor receiving the normalized mode.
+ * @return `STATUS_SUCCESS` on success, otherwise an IddCx or validation error.
  */
 
 static NTSTATUS
@@ -1345,7 +1231,9 @@ static NTSTATUS
   ctx->MonitorCount++;
 
   IDARG_OUT_MONITORARRIVAL arrivalOut = {};
+  g_MonitorDescriptionContext = monCtx;
   status = IddCxMonitorArrival(monCtx->IddCxMonitor, &arrivalOut);
+  g_MonitorDescriptionContext = nullptr;
   if (!NT_SUCCESS(status)) {
     VdIddLog("CreateMonitorLocked: IddCxMonitorArrival failed status=0x%08X", status);
     monCtx->InUse = FALSE;
@@ -1869,7 +1757,7 @@ _Use_decl_annotations_
 
   MonitorModeSpec modeSpecs[MAX_ADVERTISED_MODE_COUNT] = {};
   UINT32 preferredIndex = NO_PREFERRED_MODE;
-  const UINT32 modeCount = BuildAdvertisedModeSpecs(nullptr, modeSpecs, ARRAYSIZE(modeSpecs), &preferredIndex);
+  const UINT32 modeCount = BuildAdvertisedModeSpecs(g_MonitorDescriptionContext, modeSpecs, ARRAYSIZE(modeSpecs), &preferredIndex);
 
   if (pInArgs->MonitorModeBufferInputCount >= modeCount && pInArgs->pMonitorModes) {
     for (UINT32 i = 0; i < modeCount; i++) {
@@ -1907,7 +1795,7 @@ _Use_decl_annotations_
 
   MonitorModeSpec modeSpecs[MAX_ADVERTISED_MODE_COUNT] = {};
   UINT32 preferredIndex = NO_PREFERRED_MODE;
-  const UINT32 modeCount = BuildAdvertisedModeSpecs(nullptr, modeSpecs, ARRAYSIZE(modeSpecs), &preferredIndex);
+  const UINT32 modeCount = BuildAdvertisedModeSpecs(g_MonitorDescriptionContext, modeSpecs, ARRAYSIZE(modeSpecs), &preferredIndex);
 
   if (pInArgs->MonitorModeBufferInputCount >= modeCount && pInArgs->pMonitorModes) {
     const bool hdr10 = g_DeviceContext && g_DeviceContext->Capabilities.Hdr10;

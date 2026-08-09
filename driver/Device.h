@@ -135,7 +135,7 @@ VOID IddDeviceIoControl(
 );
 
 /**
- * @brief Report fixed monitor modes for an IddCx monitor description.
+ * @brief Report fallback and current dynamic monitor modes for an IddCx monitor description.
  *
  * @param pInArgs Monitor description and output mode buffer supplied by IddCx.
  * @param pOutArgs Receives the number of reported modes and preferred mode index.
